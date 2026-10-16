@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Game อัลกอริทึมในชีวิตประจำวัน - วิทยาการคำนวณ ป.1</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Prompt for Thai Kid-Friendly Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- MediaPipe Hands & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <!-- Canvas Confetti for Celebration -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        * {
+            font-family: 'Prompt', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Glassmorphism Styles */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border: 3px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 0 #CBD5E1;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.15), 0 6px 0 #94A3B8;
+        }
+
+        /* Bounce Animation */
+        @keyframes bounce-subtle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+        .animate-bounce-subtle {
+            animation: bounce-subtle 2s infinite ease-in-out;
+        }
+
+        /* Custom Scrollbar for level selects if needed */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(241, 245, 249, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #94A3B8;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 min-h-screen h-screen overflow-hidden text-slate-800 flex flex-col justify-center items-center relative">
+
+    <!-- Main Container / AR Viewport Container -->
+    <div id="app-container" class="relative w-full h-full max-w-7xl max-h-[900px] aspect-[16/9] bg-slate-950 md:rounded-3xl shadow-2xl overflow-hidden flex flex-col border-0 md:border-4 border-slate-700/50">
+        
+        <!-- Background WebCam Video Elements (Mirrored horizontally) -->
+        <video id="webcam" class="absolute inset-0 w-full h-full object-cover -scale-x-100 hidden" autoplay playsinline muted></video>
+        
+        <!-- AR Interactive Overlay Canvas -->
+        <canvas id="ar-canvas" class="absolute inset-0 w-full h-full z-10 cursor-pointer"></canvas>
+
+        <!-- HTML UI Overlay Layer (Header, HUD, Messages) -->
+        <div id="ui-layer" class="relative z-20 w-full h-full pointer-events-none flex flex-col justify-between p-4 md:p-6">
+            
+            <!-- TOP BAR / HEADER HUD -->
+            <div id="hud-bar" class="flex justify-between items-center gap-4 transition-all duration-300 opacity-0 pointer-events-auto">
+                <!-- Level Badge -->
+                <div class="glass-panel px-4 py-2 rounded-2xl flex items-center gap-3 border-emerald-400/50 bg-emerald-50/90 shadow-lg">
+                    <div class="bg-emerald-500 text-white w-10 h-10 rounded-xl flex items-center justify-center font-black text-xl shadow-md">
+                        <span id="hud-level-num">1</span>
+                    </div>
+                    <div>
+                        <div class="text-xs text-slate-500 font-bold uppercase tracking-wider">ด่านที่ (Level)</div>
+                        <div id="hud-level-title" class="text-base md:text-lg font-extrabold text-slate-800">การตื่นนอน</div>
+                    </div>
+                </div>
+
+                <!-- Status Badge for Hand Detection -->
+                <div id="hand-status-badge" class="glass-panel px-4 py-2 rounded-2xl flex items-center gap-2 border-amber-400/50 bg-amber-50/90 shadow-md">
+                    <i class="fa-solid fa-hand text-amber-500 animate-pulse text-lg"></i>
+                    <span id="hand-status-text" class="text-xs md:text-sm font-bold text-amber-800">กำลังหามือของคุณ... (ใช้เมาส์เล่นได้)</span>
+                </div>
+
+                <!-- Score & Progress Badge -->
+                <div class="glass-panel px-4 py-2 rounded-2xl flex items-center gap-4 border-sky-400/50 bg-sky-50/90 shadow-lg">
+                    <div class="text-right">
+                        <div class="text-xs text-slate-500 font-bold uppercase tracking-wider">คะแนนรวม</div>
+                        <div id="hud-score" class="text-xl md:text-2xl font-black text-sky-600">0</div>
+                    </div>
+                    <div class="w-10 h-10 bg-sky-500 text-white rounded-xl flex items-center justify-center text-xl shadow-md">
+                        <i class="fa-solid fa-star"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MID SCREEN Toast/Notice Messages -->
+            <div id="message-toast" class="self-center glass-panel px-6 py-3 rounded-full border-indigo-400/50 bg-indigo-600 text-white text-base md:text-lg font-bold shadow-xl transition-all duration-300 opacity-0 transform -translate-y-4 pointer-events-none flex items-center gap-3">
+                <i id="message-icon" class="fa-solid fa-lightbulb text-yellow-300 text-xl"></i>
+                <span id="message-text">เรียงลำดับให้ถูกต้องนะเด็กๆ!</span>
+            </div>
+
+            <!-- BOTTOM HUD / Controls -->
+            <div id="bottom-hud" class="flex justify-between items-end opacity-0 pointer-events-auto">
+                <button id="btn-restart-level" class="glass-panel px-4 py-2 rounded-xl text-slate-700 hover:text-indigo-600 hover:bg-white text-sm font-bold transition-all flex items-center gap-2 shadow-md">
+                    <i class="fa-solid fa-rotate-right"></i> เริ่มด่านนี้ใหม่
+                </button>
+                
+                <div id="instructions-hint" class="glass-panel px-4 py-2 rounded-xl text-slate-600 text-xs md:text-sm font-bold text-center border-slate-200">
+                    💡 <span class="text-indigo-600">ใช้นิ้วชี้เล็ง</span> และ <span class="text-emerald-600">จีบนิ้วโป้งกับนิ้วชี้</span> เพื่อหยิบการ์ดมาวางในช่อง
+                </div>
+            </div>
+        </div>
+
+        <!-- FULLSCREEN OVERLAY MODALS -->
+        <!-- 1. START SCREEN -->
+        <div id="modal-start" class="absolute inset-0 z-30 bg-slate-900/80 backdrop-blur-md flex flex-col justify-center items-center p-6 text-center">
+            <div class="glass-panel p-8 md:p-12 rounded-3xl max-w-2xl w-full flex flex-col items-center border-white/80 shadow-2xl animate-bounce-subtle">
+                <div class="w-24 h-24 bg-gradient-to-tr from-indigo-500 to-sky-400 rounded-3xl flex items-center justify-center text-white text-5xl shadow-lg mb-6 transform rotate-3">
+                    <i class="fa-solid fa-robot"></i>
+                </div>
+                <h1 class="text-3xl md:text-5xl font-black text-slate-800 mb-3 tracking-tight">
+                    AR Algorithm Game
+                </h1>
+                <p class="text-lg md:text-xl font-semibold text-indigo-600 mb-2">
+                    อัลกอริทึมในชีวิตประจำวัน (วิทยาการคำนวณ ป.1)
+                </p>
+                <p class="text-sm md:text-base text-slate-600 mb-8 max-w-md">
+                    เรียนรู้ขั้นตอนการแก้ปัญหาผ่านเทคโนโลยี AR ตรวจจับมือด้วย AI ฝึกคิดเป็นลำดับขั้นตอน 5 ด่านแสนสนุก!
+                </p>
+                <button id="btn-start-game" class="w-full max-w-xs bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xl font-extrabold py-4 px-8 rounded-2xl shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 border-b-4 border-teal-800">
+                    <i class="fa-solid fa-play text-2xl"></i> เข้าสู่เกม (Start)
+                </button>
+            </div>
+        </div>
+
+        <!-- 2. CAMERA PERMISSION & AR TUTORIAL SCREEN -->
+        <div id="modal-tutorial" class="absolute inset-0 z-30 bg-slate-900/85 backdrop-blur-md flex flex-col justify-center items-center p-6 text-center hidden">
+            <div class="glass-panel p-6 md:p-8 rounded-3xl max-w-xl w-full flex flex-col items-center border-white/80 shadow-2xl">
+                <h2 class="text-2xl md:text-3xl font-extrabold text-slate-800 mb-4">
+                    วิธีควบคุมด้วย มือ AR ✋
+                </h2>
+                
+                <div class="grid grid-cols-2 gap-4 w-full mb-6">
+                    <div class="bg-white/80 p-4 rounded-2xl border border-slate-200 flex flex-col items-center">
+                        <div class="w-16 h-16 bg-sky-100 rounded-full flex items-center justify-center text-sky-600 text-3xl mb-2">
+                            ☝️
+                        </div>
+                        <h3 class="font-bold text-slate-800 text-sm">1. เลื่อนเคอร์เซอร์</h3>
+                        <p class="text-xs text-slate-500">ใช้ <span class="font-bold text-sky-600">ปลายนิ้วชี้</span> เคลื่อนที่ไปบนหน้าจอ</p>
+                    </div>
+
+                    <div class="bg-white/80 p-4 rounded-2xl border border-slate-200 flex flex-col items-center">
+                        <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 text-3xl mb-2">
+                            👌
+                        </div>
+                        <h3 class="font-bold text-slate-800 text-sm">2. จีบนิ้วเพื่อหยิบ</h3>
+                        <p class="text-xs text-slate-500">แตะ <span class="font-bold text-emerald-600">นิ้วโป้งกับนิ้วชี้</span> เพื่อหยิบและวางการ์ด</p>
+                    </div>
+                </div>
+
+                <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-2xl text-xs md:text-sm font-semibold mb-6 flex items-center gap-3 text-left w-full">
+                    <i class="fa-solid fa-circle-info text-amber-500 text-xl flex-shrink-0"></i>
+                    <span>หากกล้องไม่ทำงาน หรือไม่สะดวกเปิดกล้อง สามารถใช้ <b>เมาส์ หรือ นิ้วสัมผัส</b> ลากวางเล่นได้ปกติเลยครับ!</span>
+                </div>
+
+                <p class="text-xs text-slate-500 mb-2 font-bold animate-pulse">กดปุ่มด้านล่าง (ด้วยจีบนิ้ว AR หรือคลิกเมาส์) เพื่อเริ่มเกม</p>
+            </div>
+        </div>
+
+        <!-- 3. ALL CLEAR / GAME OVER SCREEN -->
+        <div id="modal-clear" class="absolute inset-0 z-30 bg-slate-900/90 backdrop-blur-lg flex flex-col justify-center items-center p-6 text-center hidden">
+            <div class="glass-panel p-8 md:p-12 rounded-3xl max-w-xl w-full flex flex-col items-center border-white/80 shadow-2xl relative overflow-hidden">
+                <div class="text-6xl mb-4 animate-bounce">🏆</div>
+                <h2 class="text-4xl md:text-5xl font-black text-slate-800 mb-2">
+                    ALL CLEAR!
+                </h2>
+                <p class="text-lg font-bold text-emerald-600 mb-6">
+                    เก่งมาก! หนูผ่านหมดทุกด่านแล้วครับ 🎉
+                </p>
+
+                <div class="bg-white/90 rounded-2xl p-6 w-full mb-6 border border-slate-200 shadow-inner flex justify-around items-center">
+                    <div>
+                        <div class="text-xs text-slate-400 font-bold uppercase">ด่านที่สำเร็จ</div>
+                        <div class="text-3xl font-black text-indigo-600">5 / 5</div>
+                    </div>
+                    <div class="h-10 w-px bg-slate-200"></div>
+                    <div>
+                        <div class="text-xs text-slate-400 font-bold uppercase">คะแนนรวมทั้งหมด</div>
+                        <div id="final-score" class="text-4xl font-black text-amber-500">500</div>
+                    </div>
+                </div>
+
+                <button id="btn-restart-game" class="w-full bg-gradient-to-r from-indigo-500 to-sky-500 hover:from-indigo-600 hover:to-sky-600 text-white text-xl font-extrabold py-4 px-8 rounded-2xl shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 border-b-4 border-indigo-800">
+                    <i class="fa-solid fa-rotate-right text-2xl"></i> เล่นอีกครั้ง (Play Again)
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- AUDIO SYNTHESIZER (Web Audio API Sound Effects) -->
+    <script>
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playGrab() {
+                this.init();
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(600, this.ctx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.08);
+            }
+
+            playRelease() {
+                this.init();
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(500, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(250, this.ctx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.08);
+            }
+
+            playCorrect() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.1, now + idx * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.2);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.08);
+                    osc.stop(now + idx * 0.08 + 0.2);
+                });
+            }
+
+            playWrong() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(180, now);
+                osc.frequency.linearRampToValueAtTime(110, now + 0.25);
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            }
+
+            playWin() {
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const melody = [
+                    {f: 523.25, d: 0.15}, {f: 659.25, d: 0.15}, {f: 783.99, d: 0.15},
+                    {f: 1046.50, d: 0.3}, {f: 880.00, d: 0.15}, {f: 1046.50, d: 0.4}
+                ];
+                let elapsed = 0;
+                melody.forEach(item => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = item.f;
+                    gain.gain.setValueAtTime(0.15, now + elapsed);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + elapsed + item.d);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + elapsed);
+                    osc.stop(now + elapsed + item.d);
+                    elapsed += item.d + 0.03;
+                });
+            }
+        }
+
+        const sound = new SoundFX();
+    </script>
+
+    <!-- GAME DATA & MAIN ENGINE LOGIC -->
+    <script>
+        /* --------------------------------------------------
+         * LEVEL DATA (5 Levels for Grade 1 Students)
+         * -------------------------------------------------- */
+        const GAME_LEVELS = [
+            {
+                id: 1,
+                title: "การตื่นนอน",
+                desc: "เรียงลำดับขั้นตอนการตื่นนอนตอนเช้า",
+                steps: [
+                    { id: "1-1", text: "ตื่นนอนและพับผ้าห่ม", emoji: "⏰" },
+                    { id: "1-2", text: "แปรงฟันและล้างหน้า", emoji: "🪥" },
+                    { id: "1-3", text: "อาบน้ำแต่งตัว", emoji: "👕" },
+                    { id: "1-4", text: "รับประทานอาหารเช้า", emoji: "🍞" },
+                    { id: "1-5", text: "เดินทางไปโรงเรียน", emoji: "🎒" }
+                ]
+            },
+            {
+                id: 2,
+                title: "การแปรงฟัน",
+                desc: "เรียงลำดับขั้นตอนการแปรงฟันอย่างถูกวิธี",
+                steps: [
+                    { id: "2-1", text: "บีบยาสีฟันใส่แปรง", emoji: "🪥" },
+                    { id: "2-2", text: "แปรงฟันให้ทั่วทุกซี่", emoji: "🦷" },
+                    { id: "2-3", text: "บ้วนปากด้วยน้ำสะอาด", emoji: "🥛" },
+                    { id: "2-4", text: "ล้างแปรงและเก็บเข้าที่", emoji: "🧼" }
+                ]
+            },
+            {
+                id: 3,
+                title: "ทำความสะอาดห้อง",
+                desc: "เรียงลำดับขั้นตอนการทำความสะอาดห้องนอน",
+                steps: [
+                    { id: "3-1", text: "เก็บของเล่นเข้ากล่อง", emoji: "🧸" },
+                    { id: "3-2", text: "ปัดฝุ่นบนโต๊ะและตู้", emoji: "🧹" },
+                    { id: "3-3", text: "กวาดพื้นห้องให้สะอาด", emoji: "🧹" },
+                    { id: "3-4", text: "ถูพื้นห้องให้สะอาดสดใส", emoji: "🧽" }
+                ]
+            },
+            {
+                id: 4,
+                title: "การอ่านหนังสือ",
+                desc: "เรียงลำดับขั้นตอนการเตรียมตัวอ่านหนังสือ",
+                steps: [
+                    { id: "4-1", text: "จัดเตรียมหนังสือที่จะอ่าน", emoji: "📚" },
+                    { id: "4-2", text: "นั่งในที่สว่างเรียบร้อย", emoji: "💡" },
+                    { id: "4-3", text: "ตั้งใจอ่านอย่างเป็นระเบียบ", emoji: "📖" },
+                    { id: "4-4", text: "เก็บหนังสือเข้าชั้นให้เรียบร้อย", emoji: "📑" }
+                ]
+            },
+            {
+                id: 5,
+                title: "การซักผ้า",
+                desc: "เรียงลำดับขั้นตอนการช่วยคุณแม่ซักผ้า",
+                steps: [
+                    { id: "5-1", text: "แยกผ้าสีและผ้าขาว", emoji: "🧺" },
+                    { id: "5-2", text: "ใส่ผ้าและผงซักฟอก", emoji: "🧼" },
+                    { id: "5-3", text: "ซักและบิดผ้าให้สะอาด", emoji: "🧼" },
+                    { id: "5-4", text: "ตากผ้าให้แห้งสนิท", emoji: "☀️" }
+                ]
+            }
+        ];
+
+        /* --------------------------------------------------
+         * ENGINE STATE & VARIABLES
+         * -------------------------------------------------- */
+        let currentLevelIndex = 0;
+        let score = 0;
+        let isGameStarted = false;
+        let isCameraActive = false;
+        let handsDetector = null;
+        let cameraUtils = null;
+
+        // Canvas & Interactive Elements State
+        const canvas = document.getElementById('ar-canvas');
+        const ctx = canvas.getContext('2d');
+        const videoElement = document.getElementById('webcam');
+
+        let containerWidth = 0;
+        let containerHeight = 0;
+
+        // Cards & Slots Arrays for Current Level
+        let cards = [];
+        let dropSlots = [];
+        let uiButtons = [];
+
+        // Hand & Cursor Tracking State
+        let handLandmarks = null;
+        let cursor = {
+            x: -100,
+            y: -100,
+            isPinching: false,
+            wasPinching: false,
+            grabbedEntity: null,
+            grabOffset: { x: 0, y: 0 },
+            status: 'normal' // 'normal', 'hover', 'grabbed', 'miss'
+        };
+
+        // Fallback Mouse/Touch Interaction State
+        let mouseState = {
+            x: -100,
+            y: -100,
+            isDown: false,
+            isUsingMouse: false
+        };
+
+        /* --------------------------------------------------
+         * INITIALIZATION & RESIZE
+         * -------------------------------------------------- */
+        function initApp() {
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            setupEventListeners();
+            requestAnimationFrame(drawLoop);
+        }
+
+        function resizeCanvas() {
+            const container = document.getElementById('app-container');
+            containerWidth = container.clientWidth;
+            containerHeight = container.clientHeight;
+            canvas.width = containerWidth;
+            canvas.height = containerHeight;
+
+            // Re-layout level cards/slots if game is in progress
+            if (isGameStarted) {
+                setupLevel(currentLevelIndex, false);
+            }
+        }
+
+        /* --------------------------------------------------
+         * LEVEL CREATION & CARDS LAYOUT
+         * -------------------------------------------------- */
+        function setupLevel(levelIndex, shuffle = true) {
+            currentLevelIndex = levelIndex;
+            const levelData = GAME_LEVELS[levelIndex];
+
+            // Update Header HUD
+            document.getElementById('hud-level-num').innerText = levelIndex + 1;
+            document.getElementById('hud-level-title').innerText = levelData.title;
+            document.getElementById('hud-score').innerText = score;
+
+            showToast(`โจทย์: ${levelData.title} (${levelData.desc})`, "fa-solid fa-star");
+
+            const numSteps = levelData.steps.length;
+            cards = [];
+            dropSlots = [];
+            uiButtons = [];
+
+            // Calculate Responsive Layout Geometry
+            const isMobile = containerWidth < 640;
+            const padding = isMobile ? 15 : 30;
+
+            // 1. Setup Drop Slots (Bottom Area)
+            const slotWidth = Math.min(isMobile ? (containerWidth - padding * 2) / numSteps - 6 : 140, 160);
+            const slotHeight = isMobile ? 100 : 130;
+            const totalSlotWidth = numSteps * slotWidth + (numSteps - 1) * (isMobile ? 6 : 12);
+            const slotStartX = (containerWidth - totalSlotWidth) / 2;
+            const slotY = containerHeight - slotHeight - (isMobile ? 55 : 65);
+
+            for (let i = 0; i < numSteps; i++) {
+                dropSlots.push({
+                    index: i,
+                    x: slotStartX + i * (slotWidth + (isMobile ? 6 : 12)),
+                    y: slotY,
+                    w: slotWidth,
+                    h: slotHeight,
+                    targetStepId: levelData.steps[i].id,
+                    placedCard: null
+                });
+            }
+
+            // 2. Setup Step Cards (Top/Middle Area - Floating 2.5D Cards)
+            let rawSteps = [...levelData.steps];
+            if (shuffle) {
+                // Fisher-Yates Shuffle
+                for (let i = rawSteps.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [rawSteps[i], rawSteps[j]] = [rawSteps[j], rawSteps[i]];
+                }
+            }
+
+            const cardWidth = slotWidth;
+            const cardHeight = slotHeight;
+            const cardsPerRow = numSteps;
+            const totalCardWidth = cardsPerRow * cardWidth + (cardsPerRow - 1) * (isMobile ? 6 : 12);
+            const cardStartX = (containerWidth - totalCardWidth) / 2;
+            const cardY = isMobile ? 85 : 100;
+
+            rawSteps.forEach((step, idx) => {
+                const initX = cardStartX + idx * (cardWidth + (isMobile ? 6 : 12));
+                const initY = cardY;
+
+                cards.push({
+                    id: step.id,
+                    text: step.text,
+                    emoji: step.emoji,
+                    x: initX,
+                    y: initY,
+                    homeX: initX,
+                    homeY: initY,
+                    w: cardWidth,
+                    h: cardHeight,
+                    isDragging: false,
+                    isLocked: false,
+                    slotIndex: null
+                });
+            });
+
+            // 3. Setup Tutorial Screen AR Start Button (If on Tutorial)
+            if (document.getElementById('modal-tutorial').classList.contains('hidden') === false) {
+                createTutorialARButton();
+            }
+        }
+
+        function createTutorialARButton() {
+            uiButtons = [{
+                id: 'btn-start-ar',
+                text: 'เริ่มเล่นเลย! 🚀',
+                x: containerWidth / 2 - 110,
+                y: containerHeight / 2 + 110,
+                w: 220,
+                h: 60,
+                action: () => {
+                    document.getElementById('modal-tutorial').classList.add('hidden');
+                    document.getElementById('hud-bar').classList.remove('opacity-0');
+                    document.getElementById('bottom-hud').classList.remove('opacity-0');
+                    isGameStarted = true;
+                    sound.playCorrect();
+                }
+            }];
+        }
+
+        /* --------------------------------------------------
+         * MEDIAPIPE HANDS TRACKING SETUP
+         * -------------------------------------------------- */
+        function initMediaPipeHands() {
+            handsDetector = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            handsDetector.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.65,
+                minTrackingConfidence: 0.65
+            });
+
+            handsDetector.onResults(onHandResults);
+
+            cameraUtils = new Camera(videoElement, {
+                onFrame: async () => {
+                    await handsDetector.send({ image: videoElement });
+                },
+                width: 1280,
+                height: 720
+            });
+
+            cameraUtils.start().then(() => {
+                isCameraActive = true;
+                videoElement.classList.remove('hidden');
+            }).catch(err => {
+                console.warn("Camera failed to load or permission denied:", err);
+                updateHandBadge(false, "ไม่พบกล้อง (ใช้เมาส์เล่นได้เลย)");
+            });
+        }
+
+        function onHandResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                handLandmarks = results.multiHandLandmarks[0];
+                updateHandBadge(true, "พบมือแล้ว! (AR Active)");
+
+                // Index Finger Tip (Landmark 8)
+                const indexTip = handLandmarks[8];
+                // Thumb Tip (Landmark 4)
+                const thumbTip = handLandmarks[4];
+
+                // Map Normalized Coordinates to Canvas Space (Inverted horizontally for camera mirror)
+                const cursorX = (1 - indexTip.x) * containerWidth;
+                const cursorY = indexTip.y * containerHeight;
+
+                const thumbX = (1 - thumbTip.x) * containerWidth;
+                const thumbY = thumbTip.y * containerHeight;
+
+                // Calculate Pinch Distance using Pythagorean Theorem: Math.sqrt(dx*dx + dy*dy)
+                const dx = cursorX - thumbX;
+                const dy = cursorY - thumbY;
+                const pinchDistance = Math.sqrt(dx * dx + dy * dy);
+
+                // Pinch Threshold (pixels)
+                const PINCH_THRESHOLD = 45;
+                const isPinching = pinchDistance < PINCH_THRESHOLD;
+
+                // Update Cursor Coordinates
+                cursor.x = cursorX;
+                cursor.y = cursorY;
+                cursor.isPinching = isPinching;
+                mouseState.isUsingMouse = false;
+
+                processInteraction(cursor.x, cursor.y, cursor.isPinching);
+            } else {
+                handLandmarks = null;
+                updateHandBadge(false, "กำลังหามือของคุณ... (ใช้เมาส์เล่นได้)");
+                
+                if (!mouseState.isUsingMouse && cursor.grabbedEntity) {
+                    releaseGrabbedEntity();
+                }
+            }
+        }
+
+        function updateHandBadge(detected, text) {
+            const badge = document.getElementById('hand-status-badge');
+            const badgeText = document.getElementById('hand-status-text');
+            badgeText.innerText = text;
+
+            if (detected) {
+                badge.className = "glass-panel px-4 py-2 rounded-2xl flex items-center gap-2 border-emerald-400/50 bg-emerald-50/90 shadow-md";
+            } else {
+                badge.className = "glass-panel px-4 py-2 rounded-2xl flex items-center gap-2 border-amber-400/50 bg-amber-50/90 shadow-md";
+            }
+        }
+
+        /* --------------------------------------------------
+         * UNIFIED INTERACTION LOGIC (AR Pinch & Mouse/Touch)
+         * -------------------------------------------------- */
+        function processInteraction(x, y, isPinching) {
+            // Check hover state for visual feedback
+            let hoveredTarget = getHoveredEntity(x, y);
+
+            // Determine Cursor Status Feedback
+            if (cursor.grabbedEntity) {
+                cursor.status = 'grabbed';
+            } else if (hoveredTarget) {
+                cursor.status = isPinching ? 'grabbed' : 'hover';
+            } else if (isPinching) {
+                cursor.status = 'miss';
+            } else {
+                cursor.status = 'normal';
+            }
+
+            // Pinch Down Event (Just Started Pinching)
+            if (isPinching && !cursor.wasPinching) {
+                if (hoveredTarget) {
+                    if (hoveredTarget.type === 'card' && !hoveredTarget.entity.isLocked) {
+                        cursor.grabbedEntity = hoveredTarget.entity;
+                        cursor.grabbedEntity.isDragging = true;
+                        cursor.grabOffset.x = x - hoveredTarget.entity.x;
+                        cursor.grabOffset.y = y - hoveredTarget.entity.y;
+
+                        // Unlink from previous slot if re-dragging
+                        if (hoveredTarget.entity.slotIndex !== null) {
+                            dropSlots[hoveredTarget.entity.slotIndex].placedCard = null;
+                            hoveredTarget.entity.slotIndex = null;
+                        }
+
+                        sound.playGrab();
+                    } else if (hoveredTarget.type === 'button') {
+                        hoveredTarget.entity.action();
+                    }
+                }
+            }
+
+            // Pinch Dragging
+            if (isPinching && cursor.grabbedEntity) {
+                cursor.grabbedEntity.x = x - cursor.grabOffset.x;
+                cursor.grabbedEntity.y = y - cursor.grabOffset.y;
+            }
+
+            // Pinch Release Event (Just Released)
+            if (!isPinching && cursor.wasPinching) {
+                if (cursor.grabbedEntity) {
+                    releaseGrabbedEntity();
+                }
+            }
+
+            cursor.wasPinching = isPinching;
+        }
+
+        function releaseGrabbedEntity() {
+            if (!cursor.grabbedEntity) return;
+
+            const card = cursor.grabbedEntity;
+            card.isDragging = false;
+
+            // Check if dropped inside a valid Drop Slot
+            let placedInSlot = false;
+            for (let slot of dropSlots) {
+                if (slot.placedCard === null && isPointInsideRect(cursor.x, cursor.y, slot)) {
+                    // Snap Card to Slot Center
+                    card.x = slot.x;
+                    card.y = slot.y;
+                    card.slotIndex = slot.index;
+                    slot.placedCard = card;
+                    placedInSlot = true;
+                    sound.playRelease();
+
+                    // Check if Level is Completed after placement
+                    checkLevelCompletion();
+                    break;
+                }
+            }
+
+            // If dropped outside any slot, return to Home position
+            if (!placedInSlot) {
+                card.x = card.homeX;
+                card.y = card.homeY;
+                card.slotIndex = null;
+                sound.playRelease();
+            }
+
+            cursor.grabbedEntity = null;
+        }
+
+        function getHoveredEntity(x, y) {
+            // 1. Check UI Buttons
+            for (let btn of uiButtons) {
+                if (isPointInsideRect(x, y, btn)) {
+                    return { type: 'button', entity: btn };
+                }
+            }
+
+            // 2. Check Cards (Top priority to non-locked cards)
+            for (let card of cards) {
+                if (!card.isLocked && isPointInsideRect(x, y, card)) {
+                    return { type: 'card', entity: card };
+                }
+            }
+
+            return null;
+        }
+
+        function isPointInsideRect(px, py, rect) {
+            return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h;
+        }
+
+        /* --------------------------------------------------
+         * GAME LOGIC & WIN CONDITION
+         * -------------------------------------------------- */
+        function checkLevelCompletion() {
+            // Check if all slots are filled
+            const allFilled = dropSlots.every(slot => slot.placedCard !== null);
+            if (!allFilled) return;
+
+            // Validate Algorithm Order
+            let isCorrect = true;
+            dropSlots.forEach(slot => {
+                if (slot.placedCard.id !== slot.targetStepId) {
+                    isCorrect = false;
+                }
+            });
+
+            if (isCorrect) {
+                // Correct Sequence!
+                score += 100;
+                document.getElementById('hud-score').innerText = score;
+
+                // Lock Cards in place with success styling
+                dropSlots.forEach(slot => {
+                    slot.placedCard.isLocked = true;
+                });
+
+                sound.playCorrect();
+                showToast("ถูกต้องเยี่ยมมาก! (+100 คะแนน) 🎉", "fa-solid fa-circle-check");
+
+                // Trigger Confetti Celebration
+                confetti({
+                    particleCount: 80,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+
+                // Next Level or Game Clear Timeout
+                setTimeout(() => {
+                    if (currentLevelIndex + 1 < GAME_LEVELS.length) {
+                        setupLevel(currentLevelIndex + 1);
+                    } else {
+                        // All Levels Cleared
+                        showAllClearScreen();
+                    }
+                }, 1800);
+            } else {
+                // Incorrect Sequence
+                sound.playWrong();
+                showToast("ลำดับยังไม่ถูกต้อง ลองคิดและสลับใหม่นะ!", "fa-solid fa-triangle-exclamation");
+
+                // Shake effect / Return wrong cards back after brief delay
+                setTimeout(() => {
+                    dropSlots.forEach(slot => {
+                        if (slot.placedCard && slot.placedCard.id !== slot.targetStepId) {
+                            const card = slot.placedCard;
+                            card.x = card.homeX;
+                            card.y = card.homeY;
+                            card.slotIndex = null;
+                            slot.placedCard = null;
+                        }
+                    });
+                }, 1200);
+            }
+        }
+
+        function showAllClearScreen() {
+            isGameStarted = false;
+            sound.playWin();
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('modal-clear').classList.remove('hidden');
+
+            confetti({
+                particleCount: 200,
+                spread: 100,
+                origin: { y: 0.4 }
+            });
+        }
+
+        function showToast(text, iconClass) {
+            const toast = document.getElementById('message-toast');
+            const toastText = document.getElementById('message-text');
+            const toastIcon = document.getElementById('message-icon');
+
+            toastText.innerText = text;
+            toastIcon.className = `${iconClass} text-yellow-300 text-xl`;
+
+            toast.classList.remove('opacity-0', '-translate-y-4');
+            toast.classList.add('opacity-100', 'translate-y-0');
+
+            clearTimeout(window.toastTimer);
+            window.toastTimer = setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', '-translate-y-4');
+            }, 3000);
+        }
+
+        /* --------------------------------------------------
+         * RENDERING LOOP (AR Graphics & Hand Skeleton)
+         * Separate from MediaPipe callback for smooth 60fps
+         * -------------------------------------------------- */
+        function drawLoop() {
+            // Clear Canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Draw MediaPipe Hand Skeleton (If hand detected)
+            if (handLandmarks) {
+                drawHandSkeleton(handLandmarks);
+            }
+
+            // 2. Draw Drop Slots (If Game Active)
+            if (isGameStarted || cards.length > 0) {
+                drawSlots();
+                drawCards();
+            }
+
+            // 3. Draw AR Tutorial Floating Button (If visible)
+            drawUIButtons();
+
+            // 4. Draw Hand Cursor Feedback
+            if (handLandmarks || mouseState.isUsingMouse) {
+                drawCursor();
+            }
+
+            requestAnimationFrame(drawLoop);
+        }
+
+        /* --------------------------------------------------
+         * CANVAS GRAPHICS DRAWING HELPERS
+         * -------------------------------------------------- */
+        function drawHandSkeleton(landmarks) {
+            // Key Landmark Connections
+            const connections = [
+                [0,1],[1,2],[2,3],[3,4],        // Thumb
+                [0,5],[5,6],[6,7],[7,8],        // Index
+                [0,9],[9,10],[10,11],[11,12],   // Middle
+                [0,13],[13,14],[14,15],[15,16], // Ring
+                [0,17],[17,18],[18,19],[19,20], // Pinky
+                [5,9],[9,13],[13,17]             // Palm
+            ];
+
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
+
+            // Draw Connection Lines
+            connections.forEach(([i, j]) => {
+                const pt1 = landmarks[i];
+                const pt2 = landmarks[j];
+                ctx.beginPath();
+                ctx.moveTo((1 - pt1.x) * containerWidth, pt1.y * containerHeight);
+                ctx.lineTo((1 - pt2.x) * containerWidth, pt2.y * containerHeight);
+                ctx.stroke();
+            });
+
+            // Draw Landmark Joints
+            landmarks.forEach((pt, idx) => {
+                const x = (1 - pt.x) * containerWidth;
+                const y = pt.y * containerHeight;
+
+                ctx.beginPath();
+                ctx.arc(x, y, (idx === 4 || idx === 8) ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = (idx === 4 || idx === 8) ? "#10B981" : "#0284C7";
+                ctx.fill();
+            });
+        }
+
+        function drawSlots() {
+            dropSlots.forEach((slot, index) => {
+                // Glassmorphism Slot Background
+                ctx.save();
+                ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+                ctx.lineWidth = 2;
+                
+                drawRoundedRect(ctx, slot.x, slot.y, slot.w, slot.h, 18);
+                ctx.fill();
+                ctx.stroke();
+
+                // Slot Number Indicator
+                ctx.fillStyle = "rgba(71, 85, 105, 0.5)";
+                ctx.font = "bold 20px 'Prompt', sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(`ขั้นตอนที่ ${index + 1}`, slot.x + slot.w / 2, slot.y + slot.h / 2);
+
+                ctx.restore();
+            });
+        }
+
+        function drawCards() {
+            cards.forEach(card => {
+                ctx.save();
+
+                // Card Shadow (2.5D Depth)
+                ctx.shadowColor = "rgba(0, 0, 0, 0.15)";
+                ctx.shadowBlur = card.isDragging ? 20 : 10;
+                ctx.shadowOffsetY = card.isDragging ? 12 : 5;
+
+                // Background Gradient Fill
+                const cardGradient = ctx.createLinearGradient(card.x, card.y, card.x, card.y + card.h);
+                if (card.isLocked) {
+                    cardGradient.addColorStop(0, "#D1FAE5"); // Light Emerald for Success
+                    cardGradient.addColorStop(1, "#A7F3D0");
+                } else {
+                    cardGradient.addColorStop(0, "#FFFFFF");
+                    cardGradient.addColorStop(1, "#F8FAFC");
+                }
+
+                ctx.fillStyle = cardGradient;
+                ctx.strokeStyle = card.isLocked ? "#10B981" : (card.isDragging ? "#6366F1" : "#CBD5E1");
+                ctx.lineWidth = card.isDragging ? 3 : 2;
+
+                drawRoundedRect(ctx, card.x, card.y, card.w, card.h, 18);
+                ctx.fill();
+                ctx.stroke();
+
+                // Draw Card Content (Emoji & Step Text)
+                ctx.shadowColor = "transparent"; // Reset shadow for text
+
+                // Emoji
+                const emojiSize = containerWidth < 640 ? 28 : 36;
+                ctx.font = `${emojiSize}px sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "top";
+                ctx.fillText(card.emoji, card.x + card.w / 2, card.y + (containerWidth < 640 ? 8 : 12));
+
+                // Step Text (Thai - Kid Friendly Wrap)
+                ctx.fillStyle = card.isLocked ? "#065F46" : "#1E293B";
+                const fontSize = containerWidth < 640 ? 11 : 13;
+                ctx.font = `bold ${fontSize}px 'Prompt', sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+
+                wrapText(ctx, card.text, card.x + card.w / 2, card.y + card.h - (containerWidth < 640 ? 25 : 30), card.w - 12, fontSize + 4);
+
+                ctx.restore();
+            });
+        }
+
+        function drawUIButtons() {
+            uiButtons.forEach(btn => {
+                ctx.save();
+                ctx.shadowColor = "rgba(16, 185, 129, 0.4)";
+                ctx.shadowBlur = 15;
+                ctx.shadowOffsetY = 6;
+
+                const btnGrad = ctx.createLinearGradient(btn.x, btn.y, btn.x, btn.y + btn.h);
+                btnGrad.addColorStop(0, "#10B981");
+                btnGrad.addColorStop(1, "#059669");
+
+                ctx.fillStyle = btnGrad;
+                drawRoundedRect(ctx, btn.x, btn.y, btn.w, btn.h, 16);
+                ctx.fill();
+
+                ctx.shadowColor = "transparent";
+                ctx.fillStyle = "#FFFFFF";
+                ctx.font = "extrabold 20px 'Prompt', sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(btn.text, btn.x + btn.w / 2, btn.y + btn.h / 2);
+
+                ctx.restore();
+            });
+        }
+
+        function drawCursor() {
+            ctx.save();
+            ctx.translate(cursor.x, cursor.y);
+
+            // Cursor Color & Style based on Status Requirements
+            if (cursor.status === 'hover') {
+                // Hovering over target -> Yellow dashed circle
+                ctx.strokeStyle = "#FBBF24";
+                ctx.lineWidth = 4;
+                ctx.setLineDash([6, 6]);
+                ctx.beginPath();
+                ctx.arc(0, 0, 24, 0, Math.PI * 2);
+                ctx.stroke();
+            } else if (cursor.status === 'grabbed') {
+                // Successfully Grabbed -> Solid Green circle with icon
+                ctx.fillStyle = "#10B981";
+                ctx.beginPath();
+                ctx.arc(0, 0, 20, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = "#FFFFFF";
+                ctx.font = "bold 14px 'Font Awesome 6 Free'";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("✊", 0, 0);
+            } else if (cursor.status === 'miss') {
+                // Pinching in air -> Red Circle
+                ctx.strokeStyle = "#EF4444";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, 18, 0, Math.PI * 2);
+                ctx.stroke();
+            } else {
+                // Normal -> Light Blue Circle
+                ctx.fillStyle = "#38BDF8";
+                ctx.beginPath();
+                ctx.arc(0, 0, 14, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = "#FFFFFF";
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        /* --------------------------------------------------
+         * UTILITY DRAWING FUNCTIONS
+         * -------------------------------------------------- */
+        function drawRoundedRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+        }
+
+        function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+            const words = text.split('');
+            let line = '';
+            let lines = [];
+
+            for (let n = 0; n < words.length; n++) {
+                let testLine = line + words[n];
+                let metrics = ctx.measureText(testLine);
+                let testWidth = metrics.width;
+                if (testWidth > maxWidth && n > 0) {
+                    lines.push(line);
+                    line = words[n];
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+
+            const startY = y - ((lines.length - 1) * lineHeight) / 2;
+            lines.forEach((l, idx) => {
+                ctx.fillText(l, x, startY + idx * lineHeight);
+            });
+        }
+
+        /* --------------------------------------------------
+         * EVENT LISTENERS (Mouse & Touch Fallback)
+         * -------------------------------------------------- */
+        function setupEventListeners() {
+            // 1. Start Game Button
+            document.getElementById('btn-start-game').addEventListener('click', () => {
+                sound.playGrab();
+                document.getElementById('modal-start').classList.add('hidden');
+                document.getElementById('modal-tutorial').classList.remove('hidden');
+                
+                // Initialize MediaPipe Camera
+                initMediaPipeHands();
+                setupLevel(0, true);
+            });
+
+            // 2. Restart Level Button
+            document.getElementById('btn-restart-level').addEventListener('click', () => {
+                sound.playGrab();
+                setupLevel(currentLevelIndex, true);
+            });
+
+            // 3. Restart Whole Game Button
+            document.getElementById('btn-restart-game').addEventListener('click', () => {
+                sound.playGrab();
+                score = 0;
+                document.getElementById('modal-clear').classList.add('hidden');
+                document.getElementById('hud-bar').classList.remove('opacity-0');
+                document.getElementById('bottom-hud').classList.remove('opacity-0');
+                isGameStarted = true;
+                setupLevel(0, true);
+            });
+
+            // 4. Fallback Mouse Events
+            canvas.addEventListener('mousedown', (e) => {
+                mouseState.isUsingMouse = true;
+                const rect = canvas.getBoundingClientRect();
+                cursor.x = e.clientX - rect.left;
+                cursor.y = e.clientY - rect.top;
+                processInteraction(cursor.x, cursor.y, true);
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                if (mouseState.isUsingMouse) {
+                    const rect = canvas.getBoundingClientRect();
+                    cursor.x = e.clientX - rect.left;
+                    cursor.y = e.clientY - rect.top;
+                    processInteraction(cursor.x, cursor.y, cursor.grabbedEntity !== null);
+                }
+            });
+
+            canvas.addEventListener('mouseup', () => {
+                if (mouseState.isUsingMouse) {
+                    processInteraction(cursor.x, cursor.y, false);
+                }
+            });
+
+            // 5. Fallback Touch Events
+            canvas.addEventListener('touchstart', (e) => {
+                mouseState.isUsingMouse = true;
+                const rect = canvas.getBoundingClientRect();
+                const touch = e.touches[0];
+                cursor.x = touch.clientX - rect.left;
+                cursor.y = touch.clientY - rect.top;
+                processInteraction(cursor.x, cursor.y, true);
+            }, { passive: true });
+
+            canvas.addEventListener('touchmove', (e) => {
+                if (mouseState.isUsingMouse) {
+                    const rect = canvas.getBoundingClientRect();
+                    const touch = e.touches[0];
+                    cursor.x = touch.clientX - rect.left;
+                    cursor.y = touch.clientY - rect.top;
+                    processInteraction(cursor.x, cursor.y, true);
+                }
+            }, { passive: true });
+
+            canvas.addEventListener('touchend', () => {
+                if (mouseState.isUsingMouse) {
+                    processInteraction(cursor.x, cursor.y, false);
+                }
+            });
+        }
+
+        // Start App on Window Load
+        window.onload = initApp;
+    </script>
+</body>
+</html>
